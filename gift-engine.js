@@ -1,152 +1,108 @@
 /* ======================================================
-   GIFT PHYSICS PRO ENGINE
-   © Digital Sam Media
+   GIFT ENGINE CORE v1.2
+   © Digitalsam Media
+   Logic Layer Only – CDN Safe
    ====================================================== */
-(function () {
 
-const REQUIRED_CREDIT_ID = "ds-gift-credit";
-const REQUIRED_URL = "https://www.digitalsammedia.com/";
-let CREDIT_OK = false;
+(function (global) {
 
-/* ---------- SAFE CREDIT CHECK (ONCE ONLY) ---------- */
-function verifyCreditOnce() {
-    const link = document.getElementById(REQUIRED_CREDIT_ID);
-    if (!link) return false;
-    if (link.href !== REQUIRED_URL) return false;
-    CREDIT_OK = true;
-    return true;
-}
+  const GiftEngine = {
+    canvas: null,
+    ctx: null,
+    gifts: [],
+    angle: 0,
+    velocity: 0,
+    friction: 0.985,
+    settled: true,
+    callbacks: {},
 
-/* ---------- ENGINE INIT ---------- */
-window.initGiftSpinner = function (mountId) {
-    const root = document.getElementById(mountId);
-    if (!root) return;
+    init(cfg) {
+      this.canvas = cfg.canvas;
+      this.ctx = cfg.ctx;
+      this.gifts = cfg.gifts || [];
+      this.callbacks = cfg;
+      this.draw();
+      this.loop();
+    },
 
-    root.innerHTML = `
-    <div id="gift-app-root">
-      <div id="result-display">READY TO SPIN</div>
-      <div class="shake-hint">Drag / Shake to spin</div>
+    addGift(name) {
+      if (!name || this.gifts.length >= 15) return;
+      this.gifts.push(name);
+      this.draw();
+    },
 
-      <div class="spinner-section">
-        <div class="dial-outer"></div>
-        <canvas id="wheel-canvas" width="450" height="450"></canvas>
-        <div class="needle-assembly"><div id="physical-needle"></div></div>
-        <div class="center-cap"></div>
-      </div>
+    removeGift(i) {
+      this.gifts.splice(i, 1);
+      this.draw();
+    },
 
-      <div class="input-panel">
-        <div class="input-row">
-          <input id="gift-input" maxlength="18" placeholder="Add gift">
-          <button id="add-btn">ADD</button>
-        </div>
-        <div id="gift-tags"></div>
-      </div>
+    shake(force) {
+      if (force > 1.8) {
+        this.velocity += force * 0.5;
+        this.settled = false;
+        this.callbacks.onSpin?.();
+      }
+    },
 
-      <a id="ds-gift-credit"
-         href="https://www.digitalsammedia.com/"
-         target="_blank"
-         class="credit">
-         Gift Spinner by Digital Sam Media
-      </a>
-    </div>
-    `;
+    snap(angle) {
+      const slice = 360 / this.gifts.length;
+      return Math.round(angle / slice) * slice;
+    },
 
-    verifyCreditOnce(); // 🔒 SAFE
+    loop() {
+      if (!this.settled) {
+        this.angle += this.velocity;
+        this.velocity *= this.friction;
 
-    /* ---------- STATE ---------- */
-    const canvas = document.getElementById("wheel-canvas");
-    const ctx = canvas.getContext("2d");
-    const needle = document.getElementById("physical-needle");
-    const result = document.getElementById("result-display");
-    const gifts = ["Watch","Phone","Chocolate","Surprise","Voucher"];
-    let angle = 0, velocity = 0, spinning = false;
+        if (this.velocity < 0.02) {
+          this.velocity = 0;
+          this.settled = true;
+          this.angle = this.snap(this.angle);
+          this.callbacks.onResult?.(this.getWinner());
+        }
+      }
+      requestAnimationFrame(() => this.loop());
+    },
 
-    /* ---------- DRAW ---------- */
-    function draw() {
-        ctx.clearRect(0,0,450,450);
-        const cx=225, cy=225, r=210;
-        const slice = Math.PI*2/gifts.length;
+    getWinner() {
+      let n = this.angle % 360;
+      if (n < 0) n += 360;
+      const slice = 360 / this.gifts.length;
+      return this.gifts[Math.floor(((360 - n) % 360) / slice)];
+    },
 
-        gifts.forEach((g,i)=>{
-            ctx.beginPath();
-            ctx.moveTo(cx,cy);
-            ctx.fillStyle=`hsl(${i*360/gifts.length},70%,45%)`;
-            ctx.arc(cx,cy,r,i*slice-Math.PI/2,(i+1)*slice-Math.PI/2);
-            ctx.fill();
+    draw() {
+      const s = this.canvas.width;
+      const cx = s / 2;
+      const cy = s / 2;
+      const r = cx - 15;
+      const ctx = this.ctx;
 
-            ctx.save();
-            ctx.translate(cx,cy);
-            ctx.rotate(i*slice+slice/2-Math.PI/2);
-            ctx.fillStyle="#fff";
-            ctx.font="bold 14px Arial";
-            ctx.textAlign="right";
-            ctx.fillText(g,r-20,5);
-            ctx.restore();
-        });
+      ctx.clearRect(0, 0, s, s);
+      if (!this.gifts.length) return;
+
+      const slice = (Math.PI * 2) / this.gifts.length;
+
+      this.gifts.forEach((g, i) => {
+        const a = i * slice - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.fillStyle = `hsl(${i * 360 / this.gifts.length},65%,45%)`;
+        ctx.arc(cx, cy, r, a, a + slice);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(a + slice / 2);
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 14px Arial";
+        ctx.fillText(g, r - 20, 5);
+        ctx.restore();
+      });
     }
+  };
 
-    /* ---------- PHYSICS ---------- */
-    function animate(){
-        if(spinning){
-            angle += velocity;
-            velocity *= 0.985;
-            if(velocity<0.02){
-                spinning=false;
-                pickWinner();
-            }
-        }
-        needle.style.transform=`translateX(-50%) rotate(${angle}deg)`;
-        requestAnimationFrame(animate);
-    }
+  global.GiftEngine = GiftEngine;
 
-    function pickWinner(){
-        if(!CREDIT_OK){
-            result.textContent="Credit required";
-            return;
-        }
-        const norm=(angle%360+360)%360;
-        const index=Math.floor(((360-norm)%360)/(360/gifts.length));
-        result.textContent="🎁 "+gifts[index];
-        confetti();
-    }
-
-    /* ---------- INPUT ---------- */
-    document.getElementById("add-btn").onclick=()=>{
-        const val=document.getElementById("gift-input").value.trim();
-        if(val && gifts.length<15){
-            gifts.push(val);
-            draw();
-        }
-    };
-
-    /* ---------- DRAG + SHAKE ---------- */
-    let lastX=0,lastT=Date.now();
-    window.addEventListener("mousemove",e=>{
-        const now=Date.now(),dt=now-lastT;
-        const dx=e.clientX-lastX;
-        if(Math.abs(dx/dt)>1){
-            velocity+=Math.abs(dx)*0.01;
-            spinning=true;
-            result.textContent="SPINNING...";
-        }
-        lastX=e.clientX; lastT=now;
-    });
-
-    /* ---------- CONFETTI ---------- */
-    function confetti(){
-        for(let i=0;i<60;i++){
-            const c=document.createElement("div");
-            c.style.cssText=`position:fixed;width:8px;height:8px;
-            left:${Math.random()*100}vw;
-            background:hsl(${Math.random()*360},100%,50%);
-            top:-10px;animation:fall ${Math.random()*2+1}s linear`;
-            document.body.appendChild(c);
-            setTimeout(()=>c.remove(),3000);
-        }
-    }
-
-    draw();
-    animate();
-};
-
-})();
+})(window);

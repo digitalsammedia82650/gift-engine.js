@@ -1,6 +1,6 @@
 /**
  * Gift Physics Pro - Core Engine
- * Move this to GitHub
+ * Repository: digitalsammedia82650/gift-engine.js
  */
 window.GiftEngine = (function() {
     let state = {
@@ -16,9 +16,7 @@ window.GiftEngine = (function() {
 
     function init(userConfig) {
         config = userConfig;
-        state.gifts = userConfig.initialGifts || [];
-        
-        // Start Physics Loop
+        state.gifts = userConfig.gifts || [];
         setupEvents();
         animate();
         renderCanvas();
@@ -34,11 +32,12 @@ window.GiftEngine = (function() {
             const dy = e.clientY - state.lastMousePos.y;
             const mouseVelocity = Math.sqrt(dx*dx + dy*dy) / dt;
 
+            // Trigger Spin Physics
             if (mouseVelocity > 1.8) {
                 state.velocity += mouseVelocity * 0.5;
                 if (state.isSettled) {
                     state.isSettled = false;
-                    if (config.onSpinStart) config.onSpinStart();
+                    if (config.onSpin) config.onSpin();
                 }
             }
             state.lastMousePos = { x: e.clientX, y: e.clientY };
@@ -48,12 +47,12 @@ window.GiftEngine = (function() {
 
     function renderCanvas() {
         const { ctx, canvas } = config;
+        if (!ctx || !canvas) return;
+        
         const gifts = state.gifts;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const r = cx - 15;
+        const cx = 225, cy = 225, r = 210;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, 450, 450);
         if (gifts.length === 0) return;
 
         const slice = (Math.PI * 2) / gifts.length;
@@ -84,14 +83,15 @@ window.GiftEngine = (function() {
     function animate() {
         if (!state.isSettled) {
             state.currentAngle += state.velocity;
-            state.velocity *= 0.985; // Friction
+            state.velocity *= 0.985; // Heavy Friction Calculation
 
             if (state.velocity < 0.02) {
                 state.velocity = 0;
                 state.isSettled = true;
                 calculateWinner();
             }
-            config.needle.style.transform = `translateX(-50%) rotate(${state.currentAngle}deg)`;
+            // Update Needle Rotation
+            if(config.needle) config.needle.style.transform = `translateX(-50%) rotate(${state.currentAngle}deg)`;
         }
         requestAnimationFrame(animate);
     }

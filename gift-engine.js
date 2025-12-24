@@ -1,41 +1,59 @@
 /**
- * Gift Physics Pro - Core Logic
- * Moved to external for performance and security
+ * Gift Physics Pro - Core Engine
+ * Move this to GitHub
  */
-(function() {
-    const canvas = document.getElementById('wheel-canvas');
-    const ctx = canvas.getContext('2d');
-    const needle = document.getElementById('physical-needle');
-    const resultDisplay = document.getElementById('result-display');
-    const inputField = document.getElementById('gift-input-field');
-    const addBtn = document.getElementById('add-gift-btn');
-    const tagDisplay = document.getElementById('tag-display');
+window.GiftEngine = (function() {
+    let state = {
+        gifts: [],
+        currentAngle: 0,
+        velocity: 0,
+        isSettled: true,
+        lastMousePos: { x: 0, y: 0 },
+        lastTime: Date.now()
+    };
 
-    // Initial heavy data or "secret" list
-    let gifts = ["Watch", "Gaming PC", "iPhone 15", "Chocolate", "Mystery Box", "Car"];
-    
-    let currentAngle = 0;
-    let velocity = 0;
-    let lastMousePos = { x: 0, y: 0 };
-    let lastTime = Date.now();
-    let isSettled = true;
+    let config = {};
 
-    function init() {
-        renderGifts();
+    function init(userConfig) {
+        config = userConfig;
+        state.gifts = userConfig.initialGifts || [];
+        
+        // Start Physics Loop
+        setupEvents();
         animate();
+        renderCanvas();
     }
 
-    function renderGifts() {
-        tagDisplay.innerHTML = '';
-        gifts.forEach((g, i) => {
-            const tag = document.createElement('div');
-            tag.className = 'gift-tag';
-            tag.innerHTML = `${g} <span class="remove" onclick="removeGift(${i})">×</span>`;
-            tagDisplay.appendChild(tag);
-        });
+    function setupEvents() {
+        window.addEventListener('mousemove', (e) => {
+            const now = Date.now();
+            const dt = now - state.lastTime;
+            if (dt < 10) return;
 
-        const cx = 225, cy = 225, r = 210;
-        ctx.clearRect(0, 0, 450, 450);
+            const dx = e.clientX - state.lastMousePos.x;
+            const dy = e.clientY - state.lastMousePos.y;
+            const mouseVelocity = Math.sqrt(dx*dx + dy*dy) / dt;
+
+            if (mouseVelocity > 1.8) {
+                state.velocity += mouseVelocity * 0.5;
+                if (state.isSettled) {
+                    state.isSettled = false;
+                    if (config.onSpinStart) config.onSpinStart();
+                }
+            }
+            state.lastMousePos = { x: e.clientX, y: e.clientY };
+            state.lastTime = now;
+        });
+    }
+
+    function renderCanvas() {
+        const { ctx, canvas } = config;
+        const gifts = state.gifts;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const r = cx - 15;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (gifts.length === 0) return;
 
         const slice = (Math.PI * 2) / gifts.length;
@@ -63,79 +81,40 @@
         });
     }
 
-    addBtn.onclick = () => {
-        const val = inputField.value.trim();
-        if (val && gifts.length < 15) {
-            gifts.push(val);
-            inputField.value = '';
-            renderGifts();
-        }
-    };
-
-    window.removeGift = (i) => {
-        gifts.splice(i, 1);
-        renderGifts();
-    };
-
-    window.addEventListener('mousemove', (e) => {
-        const now = Date.now();
-        const dt = now - lastTime;
-        if (dt < 10) return;
-
-        const dx = e.clientX - lastMousePos.x;
-        const dy = e.clientY - lastMousePos.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const mouseVelocity = dist / dt;
-
-        if (mouseVelocity > 1.8) {
-            velocity += mouseVelocity * 0.5;
-            isSettled = false;
-            resultDisplay.innerText = "SPINNING...";
-            resultDisplay.style.color = "white";
-        }
-
-        lastMousePos = { x: e.clientX, y: e.clientY };
-        lastTime = now;
-    });
-
     function animate() {
-        if (!isSettled) {
-            currentAngle += velocity;
-            velocity *= 0.985; 
+        if (!state.isSettled) {
+            state.currentAngle += state.velocity;
+            state.velocity *= 0.985; // Friction
 
-            if (velocity < 0.02) {
-                velocity = 0;
-                isSettled = true;
+            if (state.velocity < 0.02) {
+                state.velocity = 0;
+                state.isSettled = true;
                 calculateWinner();
             }
+            config.needle.style.transform = `translateX(-50%) rotate(${state.currentAngle}deg)`;
         }
-        needle.style.transform = `translateX(-50%) rotate(${currentAngle}deg)`;
         requestAnimationFrame(animate);
     }
 
     function calculateWinner() {
-        if (gifts.length === 0) return;
-        let normalized = currentAngle % 360;
+        if (state.gifts.length === 0) return;
+        let normalized = state.currentAngle % 360;
         if (normalized < 0) normalized += 360;
-        const sliceSize = 360 / gifts.length;
+        const sliceSize = 360 / state.gifts.length;
         const index = Math.floor(((360 - normalized) % 360) / sliceSize);
-        const winner = gifts[index];
-        resultDisplay.innerText = "WINNER: " + winner.toUpperCase() + "!";
-        resultDisplay.style.color = "#00f2ff";
-        spawnConfetti();
+        if (config.onResult) config.onResult(state.gifts[index]);
     }
 
-    function spawnConfetti() {
-        for(let i=0; i<60; i++){
-            const p = document.createElement("div");
-            p.className = "confetti-piece";
-            p.style.left = Math.random() * 100 + "vw";
-            p.style.background = `hsl(${Math.random() * 360}, 100%, 50%)`;
-            p.style.animationDuration = (Math.random() * 2 + 1) + "s";
-            document.body.appendChild(p);
-            setTimeout(() => p.remove(), 3000);
-        }
-    }
-
-    init();
+    return {
+        init: init,
+        addGift: (name) => { 
+            state.gifts.push(name); 
+            renderCanvas(); 
+        },
+        removeGift: (index) => { 
+            state.gifts.splice(index, 1); 
+            renderCanvas(); 
+        },
+        getGifts: () => state.gifts
+    };
 })();
